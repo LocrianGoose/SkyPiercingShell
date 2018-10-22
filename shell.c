@@ -15,7 +15,7 @@ char *getWord(char *lastCh)
 	int i = 0;
 
 	while ((buf = getchar()) != ' ' && buf != '\n') {
-		if (i >= maxLen) {
+		if (i + 1 >= maxLen) {
 			maxLen <<= 1;
 			word = realloc(word, maxLen * sizeof(char));
 		}
@@ -44,8 +44,9 @@ char **getList(void)
 	int maxLen = 2, i = 0;
 	char lastCh = ' ';
 	char **list = malloc(maxLen * sizeof(char *));
+
 	while (lastCh != '\n') {
-		if (i >= maxLen) {
+		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
 			list = realloc(list, maxLen * sizeof(char *));
 		}
