@@ -8,11 +8,6 @@
 #include <sys/wait.h>
 #include <string.h>
 
-typedef struct {
-	char instruction;
-	char *file;
-} SpecialCase;
-
 char *getWord(char *lastCh)
 {
 	int maxLen = 16;
@@ -40,16 +35,16 @@ char *getWord(char *lastCh)
 
 void freeList(char **command)
 {
-	for (int i = 0; command[i] != 0; i++) {
+	for (int i = 0; command[i] != 0; i++)
 		free(command[i]);
-	}
 	free(command);
 }
 
-char **getList(SpecialCase *special)
+char **getList(int *fd)
 {
 	int maxLen = 4, i = 0;
 	char lastCh = ' ';
+	char *fileName;
 	char **list = malloc(maxLen * sizeof(char *));
 
 	while (lastCh != '\n') {
@@ -62,19 +57,22 @@ char **getList(SpecialCase *special)
 			i++;
 		switch (lastCh) {
 		case '>':
-			special->instruction = '>';
 			do {
-				special->file = getWord(&lastCh);
-			} while (special->file == NULL);
+				fileName = getWord(&lastCh);
+			} while (fileName == NULL);
+			fd[1] = open(fileName,
+				O_WRONLY | O_CREAT | O_TRUNC,
+				S_IRUSR | S_IWUSR);
+			free(fileName);
 			break;
 		case '<':
-			special->instruction = '<';
 			do {
-				special->file = getWord(&lastCh);
-			} while (special->file == NULL);
+				fileName = getWord(&lastCh);
+			} while (fileName == NULL);
+			fd[0] = open(fileName, O_RDONLY, S_IRUSR);
+			free(fileName);
 			break;
 		case '|':
-			special->instruction = '|'
 			break;
 		}
 	}
@@ -91,92 +89,48 @@ char isExit(char *word)
 	return !strncmp(word, "exit", 5) || !strncmp(word, "quit", 5);
 }
 
-int sendCmd(char **command, SpecialCase *special)
+int sendCmd(char **command, int *fd)
 {
-	int fd[2];
-
-	switch (special->instruction) {
-	case 0:
-		if (fork() > 0) {
-			wait(NULL);
-		} else {
-			if (execvp(command[0], command) < 0) {
-				perror("exec failed");
-				return 1;
-			}
+	if (fork() > 0) {
+		wait(NULL);
+		dup2(0, fd[0]);
+		dup2(1, fd[1]);
+	} else {
+		dup2(fd[0], 0);
+		dup2(fd[1], 1);
+		if (execvp(command[0], command) < 0) {
+			perror("exec failed");
+			return 1;
 		}
-		break;
-	case '>':
-		fd[1] = open(special->file,
-				O_WRONLY | O_CREAT | O_TRUNC,
-				S_IRUSR | S_IWUSR);
-		free(special->file);
-		if (fork() > 0) {
-			wait(NULL);
-			dup2(1, fd[1]);
-		} else {
-			dup2(fd[1], 1);
-			if (execvp(command[0], command) < 0) {
-				perror("exec failed");
-				return 1;
-			}
-		}
-		close(fd[1]);
-		break;
-	case '<':
-		fd[0] = open(special->file, O_RDONLY, S_IRUSR);
-		free(special->file);
-		if (fork() > 0) {
-			wait(NULL);
-			dup2(0, fd[0]);
-		} else {
-			dup2(fd[0], 0);
-			if (execvp(command[0], command) < 0) {
-				perror("exec failed");
-				return 1;
-			}
-		}
-		close(fd[0]);
-		break;
-	case '|':
-		pipe(fd);
-		if (fork() > 0) {
-			wait(NULL);
-		} else {
-			close(fd[0]);
-			dup2(fd[1], 1);
-			if (execvp(command[0], command) < 0) {
-				perror("exec failed");
-				return 1;
-			}
-		}
-		close(fd[1]);
-		dup(fd[0], 0);
-		break;
-
 	}
+	if (fd[1] != 1)
+		close(fd[1]);
+	if (fd[0] != 0)
+		close(fd[0]);
 	return 0;
 }
 
 
 int main(void)
 {
+	int fd[2];
 	char **command;
-	SpecialCase *special = malloc(sizeof(SpecialCase));
 
 	while (1) {
-		special->instruction = 0;
-		command = getList(special);
-		if (command == NULL) {
+		fd[0] = 0;
+		fd[1] = 1;
+
+		command = getList(fd);
+
+		if (command == NULL)
 			continue;
-		}
+
 		if (isExit(command[0])) {
 			freeList(command);
 			break;
 		}
-		sendCmd(command, special);
+		sendCmd(command, fd);
 		freeList(command);
 	}
-	free(special);
 	return 0;
 }
