@@ -61,15 +61,14 @@ char **getList(int *fd)
 				fileName = getWord(&lastCh);
 			} while (fileName == NULL);
 			fd[1] = open(fileName,
-				O_WRONLY | O_CREAT | O_TRUNC,
-				S_IRUSR | S_IWUSR);
+				O_WRONLY | O_CREAT | O_TRUNC, 0200);
 			free(fileName);
 			break;
 		case '<':
 			do {
 				fileName = getWord(&lastCh);
 			} while (fileName == NULL);
-			fd[0] = open(fileName, O_RDONLY, S_IRUSR);
+			fd[0] = open(fileName, O_RDONLY, 0400);
 			free(fileName);
 			break;
 		case '|':
