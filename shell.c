@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/*
+ * check malloc
+ *
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -40,38 +46,46 @@ void freeList(char **command)
 	free(command);
 }
 
-char **getList(int *fd)
+char **getList(int *fd, char *lastCh)
 {
 	int maxLen = 4, i = 0;
-	char lastCh = ' ';
 	char *fileName;
 	char **list = malloc(maxLen * sizeof(char *));
 
-	while (lastCh != '\n') {
+	fd[0] = 0;
+	fd[1] = 1;
+	while (*lastCh != '\n' && *lastCh != '|') {
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
 			list = realloc(list, maxLen * sizeof(char *));
 		}
-		list[i] = getWord(&lastCh);
+		list[i] = getWord(lastCh);
 		if (list[i] != NULL)
 			i++;
-		switch (lastCh) {
+		switch (*lastCh) {
 		case '>':
 			do {
-				fileName = getWord(&lastCh);
+				fileName = getWord(lastCh);
 			} while (fileName == NULL);
+			if (fd[1] != 1)
+				close(fd[1]);
 			fd[1] = open(fileName,
-				O_WRONLY | O_CREAT | O_TRUNC, 0200);
+				O_RDWR | O_CREAT | O_TRUNC, 0666);
 			free(fileName);
 			break;
 		case '<':
 			do {
-				fileName = getWord(&lastCh);
+				fileName = getWord(lastCh);
 			} while (fileName == NULL);
-			fd[0] = open(fileName, O_RDONLY, 0400);
+			if (fd[0] != 0)
+				close(fd[0]);
+			fd[0] = open(fileName, O_RDONLY);
 			free(fileName);
 			break;
 		case '|':
+			if (i == 0) {
+				perror("Syntax error");
+			}
 			break;
 		}
 	}
@@ -88,48 +102,121 @@ char isExit(char *word)
 	return !strncmp(word, "exit", 5) || !strncmp(word, "quit", 5);
 }
 
+
+void freeSuperList(char ***command)
+{
+	for (int i = 0; command[i] != 0; i++)
+		freeList(command[i]);
+	free(command);
+}
+
+char ***getSuperList(int (**fd)[2])
+{
+	char ***superList;
+	char lastChar = ' ';
+	int maxLen = 1;
+	int i = 0;
+
+	superList = malloc(sizeof(char **));
+	*fd = malloc(sizeof(int[2]));
+	while (lastChar != '\n') {
+		lastChar = ' ';
+		if (i + 1 >= maxLen) {
+			maxLen = maxLen << 1;
+			superList = realloc(superList, maxLen * sizeof(char **));
+			*fd = realloc(*fd, maxLen * sizeof(int[2]));
+		}
+		superList[i] = getList((*fd)[i], &lastChar);
+		if (superList[i] != NULL)
+			i++;
+	}
+	if (i == 0) {
+		freeSuperList(superList);
+		return NULL;
+	}
+	superList[i] = 0;
+	return superList;
+}
+
 int sendCmd(char **command, int *fd)
 {
+        if (fork() > 0) {
+                wait(NULL);
+        } else {
+                dup2(fd[0], 0);
+                dup2(fd[1], 1);
+                if (execvp(command[0], command) < 0) {
+                        perror("exec failed");
+                        return 1;
+                }
+        }
+        if (fd[1] != 1)
+                close(fd[1]);
+        if (fd[0] != 0)
+                close(fd[0]);
+        return 0;
+}
+
+
+int sendPipeCmd(char ***command, int (*fd)[2], int i)
+{
 	if (fork() > 0) {
-		wait(NULL);
-		dup2(0, fd[0]);
-		dup2(1, fd[1]);
+		//wait(NULL);
 	} else {
-		dup2(fd[0], 0);
-		dup2(fd[1], 1);
-		if (execvp(command[0], command) < 0) {
+		if (i != 0) {
+			dup2(fd[i - 1][0], 0);
+			close(fd[i - 1][1]);
+		}
+		if (command[i + 1] != 0) {
+			dup2(fd[i][1], 1);
+			close(fd[i][0]);
+		}
+		if (execvp(command[i][0], command[i]) < 0) {
 			perror("exec failed");
-			return 1;
+			return -1;
 		}
 	}
-	if (fd[1] != 1)
-		close(fd[1]);
-	if (fd[0] != 0)
-		close(fd[0]);
+	return 0;
+}
+
+int sendSuperCmd(char ***command, int (*fd)[2])
+{
+	int i;
+	pipe(fd[0]);
+	sendPipeCmd(command, fd, 0);
+	close(fd[0][1]);
+	for (i = 1; command[i + 1] != 0; i++) {
+		pipe(fd[i]);
+		sendPipeCmd(command, fd, i);
+		close(fd[i - 1][0]);
+		close(fd[i][1]);
+	}
+	sendPipeCmd(command, fd, i);
+	close(fd[i - 1][0]);
 	return 0;
 }
 
 
 int main(void)
 {
-	int fd[2];
-	char **command;
+	int (*fd)[2];
+	char ***command;
 
 	while (1) {
-		fd[0] = 0;
-		fd[1] = 1;
-
-		command = getList(fd);
-
+		command = getSuperList(&fd);
 		if (command == NULL)
 			continue;
 
-		if (isExit(command[0])) {
-			freeList(command);
+		if (isExit(command[0][0])) {
+			freeSuperList(command);
 			break;
 		}
-		sendCmd(command, fd);
-		freeList(command);
+		if (command[1] == 0) {
+			sendCmd(command[0], fd[0]);
+		} else {
+			sendSuperCmd(command, fd);
+		}
+		freeSuperList(command);
 	}
 	return 0;
 }
