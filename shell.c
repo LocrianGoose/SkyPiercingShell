@@ -141,14 +141,18 @@ char ***getSuperList(int (**fd)[2])
 int sendCmd(char **command, int *fd)
 {
         if (fork() > 0) {
-                wait(NULL);
+               // wait(NULL);
         } else {
                 dup2(fd[0], 0);
                 dup2(fd[1], 1);
+        	if (fd[1] != 1)
+                	close(fd[1]);
+        	if (fd[0] != 0)
+                	close(fd[0]);
                 if (execvp(command[0], command) < 0) {
                         perror("exec failed");
-                        return 1;
-                }
+                	exit(1);
+		}
         }
         if (fd[1] != 1)
                 close(fd[1]);
@@ -161,19 +165,29 @@ int sendCmd(char **command, int *fd)
 int sendPipeCmd(char ***command, int (*fd)[2], int i)
 {
 	if (fork() > 0) {
-		//wait(NULL);
 	} else {
 		if (i != 0) {
 			dup2(fd[i - 1][0], 0);
 			close(fd[i - 1][1]);
+		} else {
+			dup2(fd[0][0], 0);
+			if (fd[0][0] != 0)
+				close(fd[0][0]);
 		}
 		if (command[i + 1] != 0) {
 			dup2(fd[i][1], 1);
-			close(fd[i][0]);
+			if (fd[i][1] != 1)
+				close(fd[i][1]);
+			if (i != 0)
+				close(fd[i][0]);
+		} else {
+			dup2(fd[i][1], 1);
+			if (fd[i][1] != 1)
+				close(fd[i][1]);
 		}
 		if (execvp(command[i][0], command[i]) < 0) {
 			perror("exec failed");
-			return -1;
+			exit(1);
 		}
 	}
 	return 0;
@@ -181,9 +195,11 @@ int sendPipeCmd(char ***command, int (*fd)[2], int i)
 
 int sendSuperCmd(char ***command, int (*fd)[2])
 {
-	int i;
+	int i, tmp[2];
+	tmp[0] = fd[0][0];
 	pipe(fd[0]);
-	sendPipeCmd(command, fd, 0);
+	tmp[1] = fd[0][1];
+	sendPipeCmd(command, &tmp, 0);
 	close(fd[0][1]);
 	for (i = 1; command[i + 1] != 0; i++) {
 		pipe(fd[i]);
@@ -193,6 +209,8 @@ int sendSuperCmd(char ***command, int (*fd)[2])
 	}
 	sendPipeCmd(command, fd, i);
 	close(fd[i - 1][0]);
+	if (fd[i][1] != 1)
+		close(fd[i][1]);
 	return 0;
 }
 
@@ -217,6 +235,7 @@ int main(void)
 			sendSuperCmd(command, fd);
 		}
 		freeSuperList(command);
+		while (wait(NULL) != -1);
 	}
 	return 0;
 }
