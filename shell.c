@@ -46,6 +46,13 @@ void freeList(char **command)
 	free(command);
 }
 
+void freeSuperList(char ***command)
+{
+	for (int i = 0; command[i] != 0; i++)
+		freeList(command[i]);
+	free(command);
+}
+
 char **getList(int *fd, char *lastCh)
 {
 	int maxLen = 4, i = 0;
@@ -84,7 +91,9 @@ char **getList(int *fd, char *lastCh)
 			break;
 		case '|':
 			if (i == 0) {
-				perror("Syntax error");
+				puts("Syntax error");
+				freeList(list);
+				exit(-1);
 			}
 			break;
 		}
@@ -97,18 +106,7 @@ char **getList(int *fd, char *lastCh)
 	return list;
 }
 
-char isExit(char *word)
-{
-	return !strncmp(word, "exit", 5) || !strncmp(word, "quit", 5);
-}
 
-
-void freeSuperList(char ***command)
-{
-	for (int i = 0; command[i] != 0; i++)
-		freeList(command[i]);
-	free(command);
-}
 
 char ***getSuperList(int (**fd)[2])
 {
@@ -123,7 +121,8 @@ char ***getSuperList(int (**fd)[2])
 		lastChar = ' ';
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
-			superList = realloc(superList, maxLen * sizeof(char **));
+			superList = realloc(superList,
+					maxLen * sizeof(char **));
 			*fd = realloc(*fd, maxLen * sizeof(int[2]));
 		}
 		superList[i] = getList((*fd)[i], &lastChar);
@@ -138,27 +137,32 @@ char ***getSuperList(int (**fd)[2])
 	return superList;
 }
 
+char isExit(char *word)
+{
+	return !strncmp(word, "exit", 5) || !strncmp(word, "quit", 5);
+}
+
+
 int sendCmd(char **command, int *fd)
 {
-        if (fork() > 0) {
-               // wait(NULL);
-        } else {
-                dup2(fd[0], 0);
-                dup2(fd[1], 1);
-        	if (fd[1] != 1)
-                	close(fd[1]);
-        	if (fd[0] != 0)
-                	close(fd[0]);
-                if (execvp(command[0], command) < 0) {
-                        perror("exec failed");
-                	exit(1);
+	if (fork() > 0) {
+	} else {
+		dup2(fd[0], 0);
+		dup2(fd[1], 1);
+		if (fd[1] != 1)
+			close(fd[1]);
+		if (fd[0] != 0)
+			close(fd[0]);
+		if (execvp(command[0], command) < 0) {
+			perror("exec failed");
+			exit(1);
 		}
-        }
-        if (fd[1] != 1)
-                close(fd[1]);
-        if (fd[0] != 0)
-                close(fd[0]);
-        return 0;
+	}
+	if (fd[1] != 1)
+		close(fd[1]);
+	if (fd[0] != 0)
+		close(fd[0]);
+	return 0;
 }
 
 
@@ -196,6 +200,7 @@ int sendPipeCmd(char ***command, int (*fd)[2], int i)
 int sendSuperCmd(char ***command, int (*fd)[2])
 {
 	int i, tmp[2];
+
 	tmp[0] = fd[0][0];
 	pipe(fd[0]);
 	tmp[1] = fd[0][1];
@@ -235,7 +240,8 @@ int main(void)
 			sendSuperCmd(command, fd);
 		}
 		freeSuperList(command);
-		while (wait(NULL) != -1);
+		while (wait(NULL) != -1)
+			;
 	}
 	return 0;
 }
