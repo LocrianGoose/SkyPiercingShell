@@ -12,6 +12,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <signal.h>
+#include <stddef.h>
+
 
 char *getWord(char *lastCh)
 {
@@ -110,7 +113,7 @@ char **getList(int *fd, char *lastCh)
 
 
 
-char ***getSuperList(int (**fd)[2])
+char ***getSuperList(int (**fd)[2], int *length)
 {
 	char ***superList = NULL;
 	char lastChar = ' ';
@@ -139,6 +142,7 @@ char ***getSuperList(int (**fd)[2])
 	}
 	if (i > 0)
 		superList[i] = 0;
+	*length = i;
 	return superList;
 }
 
@@ -154,7 +158,6 @@ int sendCmd(char **command, int *fd)
 
 	if (pid < 0) {
 		perror("fork failed");
-		freeList(command);
 		exit(1);
 	} else if (pid == 0) {
 		dup2(fd[0], 0);
@@ -165,7 +168,7 @@ int sendCmd(char **command, int *fd)
 			close(fd[0]);
 		if (execvp(command[0], command) < 0) {
 			perror("exec failed");
-			freeList(command);
+			puts(command[0]);
 			exit(1);
 		}
 	}
@@ -183,7 +186,6 @@ int sendPipeCmd(char ***command, int (*fd)[2], int i)
 
 	if (pid < 0) {
 		perror("fork failed");
-		freeSuperList(command, fd);
 		exit(1);
 	} else if (pid == 0) {
 		if (i != 0) {
@@ -207,16 +209,14 @@ int sendPipeCmd(char ***command, int (*fd)[2], int i)
 		}
 		if (execvp(command[i][0], command[i]) < 0) {
 			perror("exec failed");
-			freeSuperList(command, fd);
 			exit(1);
 		}
 	}
 	return 0;
 }
 
-int sendSuperCmd(char ***command, int (*fd)[2])
+int sendSuperCmd(char ***command, int (*fd)[2], int length)
 {
-	//add custom commands here
 	if (command[1] == 0) {
 		sendCmd(command[0], fd[0]);
 	} else {
@@ -241,21 +241,49 @@ int sendSuperCmd(char ***command, int (*fd)[2])
 	return 0;
 }
 
+//Issue: Ctrl+C is being read by getWord()
+void INT_handler(int sig)
+{
+	sigset_t sigset;
+
+	sigemptyset(&sigset);
+	if (sig == SIGINT) {
+		puts("SIGINT...");
+		sigaddset(&sigset, SIGINT);
+		kill(-getpid(), SIGINT);
+		sigwait(&sigset, &sig);
+	}
+}
+
+void install_handler(void)
+{
+	struct sigaction setup_action;
+	sigset_t block_mask;
+
+	sigemptyset(&block_mask);
+	sigaddset(&block_mask, SIGINT);
+	sigaddset(&block_mask, SIGQUIT);
+	setup_action.sa_handler = INT_handler;
+	setup_action.sa_mask = block_mask;
+	setup_action.sa_flags = 0;
+	sigaction(SIGINT, &setup_action, NULL);
+}
 
 int main(void)
 {
-	int (*fd)[2] = NULL;
+	int (*fd)[2], length;
 	char ***command;
 
+	install_handler();
 	while (1) {
-		command = getSuperList(&fd);
+		fd = NULL;
+		command = getSuperList(&fd, &length);
 		if (command == NULL)
 			continue;
 
-		if (isExit(command[0][0])) {
+		if (isExit(command[0][0]))
 			break;
-		}
-		sendSuperCmd(command, fd);
+		sendSuperCmd(command, fd, length);
 		freeSuperList(command, fd);
 		while (wait(NULL) != -1)
 			;
