@@ -15,16 +15,12 @@
 
 char *getWord(char *lastCh)
 {
-	int maxLen = 16;
-	char *word = malloc(maxLen * sizeof(char));
+	int maxLen = 1;
+	char *word = NULL;
 	char buf;
 	int i = 0;
 	*lastCh = 0;
 
-	if (word == NULL) {
-		perror("malloc failed");
-		exit(1);
-	}
 	while ((buf = getchar()) != ' ' && buf != '\n' &&
 				buf != '>' && buf != '<' && buf != '|') {
 		if (i + 1 >= maxLen) {
@@ -38,11 +34,8 @@ char *getWord(char *lastCh)
 		word[i++] = buf;
 	}
 	*lastCh = buf;
-	if (i == 0) {
-		free(word);
-		return NULL;
-	}
-	word[i] = 0;
+	if (i > 0)
+		word[i] = 0;
 	return word;
 }
 
@@ -63,14 +56,10 @@ void freeSuperList(char ***command, int (*fd)[2])
 
 char **getList(int *fd, char *lastCh)
 {
-	int maxLen = 4, i = 0;
+	int maxLen = 1, i = 0;
 	char *fileName;
-	char **list = malloc(maxLen * sizeof(char *));
+	char **list = NULL;
 
-	if (list == NULL) {
-		perror("malloc failed");
-		exit(1);
-	}
 	fd[0] = 0;
 	fd[1] = 1;
 	while (*lastCh != '\n' && *lastCh != '|') {
@@ -114,11 +103,8 @@ char **getList(int *fd, char *lastCh)
 			break;
 		}
 	}
-	if (i == 0) {
-		freeList(list);
-		return NULL;
-	}
-	list[i] = 0;
+	if (i > 0)
+		list[i] = 0;
 	return list;
 }
 
@@ -126,21 +112,11 @@ char **getList(int *fd, char *lastCh)
 
 char ***getSuperList(int (**fd)[2])
 {
-	char ***superList;
+	char ***superList = NULL;
 	char lastChar = ' ';
 	int maxLen = 1;
 	int i = 0;
 
-	superList = malloc(sizeof(char **));
-	if (superList == NULL) {
-		perror("malloc failed");
-		exit(1);
-	}
-	*fd = malloc(sizeof(int[2]));
-	if (*fd == NULL) {
-		perror("malloc failed");
-		exit(1);
-	}
 	while (lastChar != '\n') {
 		lastChar = ' ';
 		if (i + 1 >= maxLen) {
@@ -161,11 +137,8 @@ char ***getSuperList(int (**fd)[2])
 		if (superList[i] != NULL)
 			i++;
 	}
-	if (i == 0) {
-		freeSuperList(superList, *fd);
-		return NULL;
-	}
-	superList[i] = 0;
+	if (i > 0)
+		superList[i] = 0;
 	return superList;
 }
 
@@ -243,6 +216,7 @@ int sendPipeCmd(char ***command, int (*fd)[2], int i)
 
 int sendSuperCmd(char ***command, int (*fd)[2])
 {
+	//add custom commands here
 	if (command[1] == 0) {
 		sendCmd(command[0], fd[0]);
 	} else {
@@ -270,7 +244,7 @@ int sendSuperCmd(char ***command, int (*fd)[2])
 
 int main(void)
 {
-	int (*fd)[2];
+	int (*fd)[2] = NULL;
 	char ***command;
 
 	while (1) {
@@ -279,7 +253,6 @@ int main(void)
 			continue;
 
 		if (isExit(command[0][0])) {
-			freeSuperList(command, fd);
 			break;
 		}
 		sendSuperCmd(command, fd);
