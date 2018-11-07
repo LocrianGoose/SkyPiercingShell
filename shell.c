@@ -206,11 +206,11 @@ int sendCmd(char **command, int *fd, int closeNext)
 
 int superSendCmd(char ***command, int (*fd)[3], int length)
 {
-	int superfd[2], pipefd[2], closeNext;
+	int superfd[2], pipefd[2], closeNext, i;
 
 	pipefd[0] = fd[0][0];
 	closeNext = 0;
-	for (int i = 0; i < length; i++) {
+	for (i = 0; i < length; i++) {
 		superfd[0] = pipefd[0];
 		if (fd[i][1] == PIPE_CODE && fd[i + 1][0] == 0) {
 			pipe(pipefd);
@@ -229,6 +229,10 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 			close(superfd[1]);
 		if (!fd[i][2])
 			wait(NULL);
+	}
+	while (1) {
+		if (fd[length - 1][2] || wait(NULL) == -1)
+			break;
 	}
 	return 0;
 }
@@ -281,10 +285,6 @@ int main(void)
 			break;
 		superSendCmd(command, fd, length);
 		freeSuperList(command, fd);
-		while (1) {
-			if (wait(NULL) == -1)
-				break;
-		}
 	}
 	return 0;
 }
