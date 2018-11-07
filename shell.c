@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /*
- *
+ * Let's get dangerous!
  *
  */
 
@@ -152,7 +152,7 @@ char isExit(char *word)
 }
 
 
-int sendCmd(char **command, int *fd)
+int sendCmd(char **command, int *fd, int closeNext)
 {
 	pid_t pid = fork();
 
@@ -160,6 +160,8 @@ int sendCmd(char **command, int *fd)
 		perror("fork failed");
 		exit(1);
 	} else if (pid == 0) {
+		if (closeNext != 0)
+			close(closeNext);
 		dup2(fd[0], 0);
 		dup2(fd[1], 1);
 		if (fd[1] != 1)
@@ -176,83 +178,65 @@ int sendCmd(char **command, int *fd)
 		close(fd[1]);
 	if (fd[0] != 0)
 		close(fd[0]);
-	return 0;
+	return pid;
 }
 
 
-int sendPipeCmd(char ***command, int (*fd)[2], int i)
-{
-	pid_t pid = fork();
 
-	if (pid < 0) {
-		perror("fork failed");
-		exit(1);
-	} else if (pid == 0) {
-		if (i != 0) {
-			dup2(fd[i - 1][0], 0);
-			close(fd[i - 1][1]);
-		} else {
-			dup2(fd[0][0], 0);
-			if (fd[0][0] != 0)
-				close(fd[0][0]);
+int superSendCmd(char ***command, int (*fd)[2], int length)
+{
+	int superfd[2], pipefd[2], closeNext;
+
+	superfd[0] = fd[0][0];
+	pipefd[0] = fd[0][0];
+	closeNext = 0;
+	if (length != 1) {
+		pipe(pipefd);
+		closeNext = pipefd[0];
+		superfd[1] = pipefd[1];
+	}
+	for (int i = 0; i < length; i++) {
+		if (i > 0 && i < length - 1) {
+			superfd[0] = pipefd[0];
+			pipe(pipefd);
+			closeNext = pipefd[0];
+			superfd[1] = pipefd[1];
 		}
-		if (command[i + 1] != 0) {
-			dup2(fd[i][1], 1);
-			if (fd[i][1] != 1)
-				close(fd[i][1]);
-			if (i != 0)
-				close(fd[i][0]);
-		} else {
-			dup2(fd[i][1], 1);
-			if (fd[i][1] != 1)
-				close(fd[i][1]);
+		if (i == length - 1) {
+			superfd[0] = pipefd[0];
+			superfd[1] = fd[i][1];
+			closeNext = 0;
 		}
-		if (execvp(command[i][0], command[i]) < 0) {
-			perror("exec failed");
-			exit(1);
-		}
+		sendCmd(command[i], superfd, closeNext);
+		if (superfd[0] != 0)
+			close(superfd[0]);
+		if (superfd[1] != 1)
+			close(superfd[1]);
 	}
 	return 0;
 }
 
-int sendSuperCmd(char ***command, int (*fd)[2], int length)
-{
-	if (command[1] == 0) {
-		sendCmd(command[0], fd[0]);
-	} else {
-		int i, tmp[2];
 
-		tmp[0] = fd[0][0];
-		pipe(fd[0]);
-		tmp[1] = fd[0][1];
-		sendPipeCmd(command, &tmp, 0);
-		close(fd[0][1]);
-		for (i = 1; command[i + 1] != 0; i++) {
-			pipe(fd[i]);
-			sendPipeCmd(command, fd, i);
-			close(fd[i - 1][0]);
-			close(fd[i][1]);
-		}
-		sendPipeCmd(command, fd, i);
-		close(fd[i - 1][0]);
-		if (fd[i][1] != 1)
-			close(fd[i][1]);
-	}
-	return 0;
-}
-
-//Issue: Ctrl+C is being read by getWord()
+//race condition with recurcive shells
 void INT_handler(int sig)
 {
 	sigset_t sigset;
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
+		printf("pid %d ", getpid());
 		puts("SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
 		sigwait(&sigset, &sig);
+	} else {
+		printf("GAH! Signal %d!!!\n", sig);
 	}
+}
+
+void dummy_handler(int sig)
+{
+	printf("Signal %d pid %d\n", sig, getpid());
 }
 
 void install_handler(void)
@@ -265,7 +249,7 @@ void install_handler(void)
 	sigaddset(&block_mask, SIGQUIT);
 	setup_action.sa_handler = INT_handler;
 	setup_action.sa_mask = block_mask;
-	setup_action.sa_flags = 0;
+	setup_action.sa_flags = SA_RESTART;
 	sigaction(SIGINT, &setup_action, NULL);
 }
 
@@ -283,10 +267,12 @@ int main(void)
 
 		if (isExit(command[0][0]))
 			break;
-		sendSuperCmd(command, fd, length);
+		superSendCmd(command, fd, length);
 		freeSuperList(command, fd);
-		while (wait(NULL) != -1)
-			;
+		while (1) {
+			if (wait(NULL) != -1)
+				break;
+		}
 	}
 	return 0;
 }
