@@ -1,65 +1,170 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/*
+ * Let's get dangerous!
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <signal.h>
+#include <stddef.h>
+
+#define PIPE_CODE -23
+#define AMPERSAND -42
 
 char *getWord(char *lastCh)
 {
-	int maxLen = 16;
-	char *word = malloc(maxLen * sizeof(char));
+	int maxLen = 1;
+	char *word = NULL;
 	char buf;
 	int i = 0;
+	*lastCh = 0;
 
-	while ((buf = getchar()) != ' ' && buf != '\n') {
+	while ((buf = getchar()) != ' ' && buf != '\n' &&
+				buf != '>' && buf != '<' &&
+				buf != '|' && buf != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen <<= 1;
 			word = realloc(word, maxLen * sizeof(char));
+			if (word == NULL) {
+				perror("realloc failed");
+				exit(1);
+			}
 		}
 		word[i++] = buf;
 	}
-	if (i == 0) {
-		*lastCh = 0;
-		free(word);
-		return NULL;
-	}
-	word[i] = 0;
 	*lastCh = buf;
+	if (i > 0)
+		word[i] = 0;
 	return word;
 }
 
 void freeList(char **command)
 {
-	for (int i = 0; command[i] != 0; i++) {
+	for (int i = 0; command[i] != 0; i++)
 		free(command[i]);
-	}
 	free(command);
 }
 
-char **getList(void)
+void freeSuperList(char ***command, int (*fd)[3])
 {
-	int maxLen = 2, i = 0;
-	char lastCh = ' ';
-	char **list = malloc(maxLen * sizeof(char *));
+	for (int i = 0; command[i] != 0; i++)
+		freeList(command[i]);
+	free(command);
+	free(fd);
+}
 
-	while (lastCh != '\n') {
+char **getList(int *fd, char *lastCh)
+{
+	int maxLen = 1, i = 0;
+	char *fileName;
+	char **list = NULL;
+
+	fd[0] = 0;
+	fd[1] = 1;
+	fd[2] = 0;
+	while (*lastCh != '\n' && *lastCh != '|' && *lastCh != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
 			list = realloc(list, maxLen * sizeof(char *));
+			if (list == NULL) {
+				perror("realloc failed");
+				exit(1);
+			}
 		}
-		list[i++] = getWord(&lastCh);
-		if (lastCh == 0)
-			i--;
+		list[i] = getWord(lastCh);
+		if (list[i] != NULL)
+			i++;
+		switch (*lastCh) {
+		case '>':
+			do {
+				fileName = getWord(lastCh);
+			} while (fileName == NULL);
+			if (fd[1] != 1)
+				close(fd[1]);
+			fd[1] = open(fileName,
+				O_RDWR | O_CREAT | O_TRUNC, 0666);
+			free(fileName);
+			break;
+		case '<':
+			do {
+				fileName = getWord(lastCh);
+			} while (fileName == NULL);
+			if (fd[0] != 0)
+				close(fd[0]);
+			fd[0] = open(fileName, O_RDONLY);
+			free(fileName);
+			break;
+		case '|':
+			if (i == 0) {
+				puts("Syntax error");
+				exit(1);
+			}
+			if (fd[1] == 1) {
+				fd[1] = PIPE_CODE;
+				fd[2] = PIPE_CODE;
+			}
+			break;
+		}
 	}
-	if (i == 0) {
-		freeList(list);
-		return NULL;
+	if (i > 0)
+		list[i] = 0;
+	else if (list != NULL) {
+		free(list);
+		list = NULL;
 	}
-	list[i] = 0;
 	return list;
+}
+
+
+
+char ***getSuperList(int (**fd)[3], int *length)
+{
+	char ***superList = NULL;
+	char lastChar = ' ';
+	int maxLen = 1;
+	int i = 0;
+
+	while (lastChar != '\n') {
+		lastChar = ' ';
+		if (i + 1 >= maxLen) {
+			maxLen = maxLen << 1;
+			superList = realloc(superList,
+					maxLen * sizeof(char **));
+			if (superList == NULL) {
+				perror("realloc failed");
+				exit(1);
+			}
+			*fd = realloc(*fd, maxLen * sizeof(int[3]));
+			if (*fd == NULL) {
+				perror("realloc failed");
+				exit(1);
+			}
+		}
+		superList[i] = getList((*fd)[i], &lastChar);
+		if (superList[i] != NULL)
+			i++;
+		if (i != 0 && lastChar == '&') {
+			if ((*fd)[i - 1][2] == AMPERSAND)
+				(*fd)[i - 1][2] = 0;
+			else
+				(*fd)[i - 1][2] = AMPERSAND;
+		}
+	}
+	if (i > 0)
+		superList[i] = 0;
+	else if (superList != 0) {
+		free(superList);
+		superList = NULL;
+	}
+	*length = i;
+	return superList;
 }
 
 char isExit(char *word)
@@ -68,28 +173,118 @@ char isExit(char *word)
 }
 
 
+int sendCmd(char **command, int *fd, int closeNext)
+{
+	pid_t pid = fork();
+
+	if (pid < 0) {
+		perror("fork failed");
+		exit(1);
+	} else if (pid == 0) {
+		if (closeNext != 0)
+			close(closeNext);
+		dup2(fd[0], 0);
+		dup2(fd[1], 1);
+		if (fd[1] != 1)
+			close(fd[1]);
+		if (fd[0] != 0)
+			close(fd[0]);
+		if (execvp(command[0], command) < 0) {
+			perror("exec failed");
+			puts(command[0]);
+			exit(1);
+		}
+	}
+	if (fd[1] != 1)
+		close(fd[1]);
+	if (fd[0] != 0)
+		close(fd[0]);
+	return pid;
+}
+
+
+
+int superSendCmd(char ***command, int (*fd)[3], int length)
+{
+	int superfd[2], pipefd[2], closeNext;
+
+	pipefd[0] = fd[0][0];
+	closeNext = 0;
+	for (int i = 0; i < length; i++) {
+		superfd[0] = pipefd[0];
+		if (fd[i][1] == PIPE_CODE && fd[i + 1][0] == 0) {
+			pipe(pipefd);
+			closeNext = pipefd[0];
+			superfd[1] = pipefd[1];
+		} else {
+			superfd[1] = fd[i][1];
+			closeNext = 0;
+		}
+		if (fd[i][0] != 0)
+			superfd[0] = fd[i][0];
+		sendCmd(command[i], superfd, closeNext);
+		if (superfd[0] != 0)
+			close(superfd[0]);
+		if (superfd[1] != 1)
+			close(superfd[1]);
+		if (!fd[i][2])
+			wait(NULL);
+	}
+	return 0;
+}
+
+
+/* race condition with recurcive shells */
+void INT_handler(int sig)
+{
+	sigset_t sigset;
+
+	sigemptyset(&sigset);
+	if (sig == SIGINT) {
+		//printf("pid %d ", getpid());
+		puts(" SIGINT...");
+		sigaddset(&sigset, SIGINT);
+		kill(-getpid(), SIGINT);
+		sigwait(&sigset, &sig);
+	} else {
+		printf("GAH! Signal %d!!!\n", sig);
+	}
+}
+
+void install_handler(void)
+{
+	struct sigaction setup_action;
+	sigset_t block_mask;
+
+	sigemptyset(&block_mask);
+	sigaddset(&block_mask, SIGINT);
+	sigaddset(&block_mask, SIGQUIT);
+	setup_action.sa_handler = INT_handler;
+	setup_action.sa_mask = block_mask;
+	setup_action.sa_flags = SA_RESTART;
+	sigaction(SIGINT, &setup_action, NULL);
+}
+
 int main(void)
 {
-	char **command;
+	int (*fd)[3], length = 0;
+	char ***command;
 
+	install_handler();
 	while (1) {
-		command = getList();
-		if (command == NULL) {
+		fd = NULL;
+		printf("shell%d: ", getpid());
+		command = getSuperList(&fd, &length);
+		if (command == NULL)
 			continue;
-		}
-		if (isExit(command[0])) {
-			freeList(command);
+		if (isExit(command[0][0]))
 			break;
+		superSendCmd(command, fd, length);
+		freeSuperList(command, fd);
+		while (1) {
+			if (wait(NULL) == -1)
+				break;
 		}
-		if (fork() > 0) {
-			wait(NULL);
-		} else {
-			if (execvp(command[0], command) < 0) {
-				perror("exec failed");
-				return 1;
-			}
-		}
-		freeList(command);
 	}
 	return 0;
 }
