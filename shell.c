@@ -108,6 +108,10 @@ char **getList(int *fd, char *lastCh)
 	}
 	if (i > 0)
 		list[i] = 0;
+	else if (list != NULL) {
+		free(list);
+		list = NULL;
+	}
 	return list;
 }
 
@@ -142,6 +146,10 @@ char ***getSuperList(int (**fd)[2], int *length)
 	}
 	if (i > 0)
 		superList[i] = 0;
+	else if (superList != 0) {
+		free(superList);
+		superList = NULL;
+	}
 	*length = i;
 	return superList;
 }
@@ -217,7 +225,7 @@ int superSendCmd(char ***command, int (*fd)[2], int length)
 }
 
 
-//race condition with recurcive shells
+/* race condition with recurcive shells */
 void INT_handler(int sig)
 {
 	sigset_t sigset;
@@ -232,11 +240,6 @@ void INT_handler(int sig)
 	} else {
 		printf("GAH! Signal %d!!!\n", sig);
 	}
-}
-
-void dummy_handler(int sig)
-{
-	printf("Signal %d pid %d\n", sig, getpid());
 }
 
 void install_handler(void)
@@ -255,7 +258,7 @@ void install_handler(void)
 
 int main(void)
 {
-	int (*fd)[2], length;
+	int (*fd)[2], length = 0;
 	char ***command;
 
 	install_handler();
@@ -264,7 +267,6 @@ int main(void)
 		command = getSuperList(&fd, &length);
 		if (command == NULL)
 			continue;
-
 		if (isExit(command[0][0]))
 			break;
 		superSendCmd(command, fd, length);
