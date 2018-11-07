@@ -15,6 +15,8 @@
 #include <signal.h>
 #include <stddef.h>
 
+#define PIPE_CODE -23
+#define AMPERSAND -42
 
 char *getWord(char *lastCh)
 {
@@ -25,7 +27,8 @@ char *getWord(char *lastCh)
 	*lastCh = 0;
 
 	while ((buf = getchar()) != ' ' && buf != '\n' &&
-				buf != '>' && buf != '<' && buf != '|') {
+				buf != '>' && buf != '<' &&
+				buf != '|' && buf != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen <<= 1;
 			word = realloc(word, maxLen * sizeof(char));
@@ -49,7 +52,7 @@ void freeList(char **command)
 	free(command);
 }
 
-void freeSuperList(char ***command, int (*fd)[2])
+void freeSuperList(char ***command, int (*fd)[3])
 {
 	for (int i = 0; command[i] != 0; i++)
 		freeList(command[i]);
@@ -65,7 +68,8 @@ char **getList(int *fd, char *lastCh)
 
 	fd[0] = 0;
 	fd[1] = 1;
-	while (*lastCh != '\n' && *lastCh != '|') {
+	fd[2] = 0;
+	while (*lastCh != '\n' && *lastCh != '|' && *lastCh != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
 			list = realloc(list, maxLen * sizeof(char *));
@@ -100,8 +104,11 @@ char **getList(int *fd, char *lastCh)
 		case '|':
 			if (i == 0) {
 				puts("Syntax error");
-				freeList(list);
 				exit(1);
+			}
+			if (fd[1] == 1) {
+				fd[1] = PIPE_CODE;
+				fd[2] = PIPE_CODE;
 			}
 			break;
 		}
@@ -117,7 +124,7 @@ char **getList(int *fd, char *lastCh)
 
 
 
-char ***getSuperList(int (**fd)[2], int *length)
+char ***getSuperList(int (**fd)[3], int *length)
 {
 	char ***superList = NULL;
 	char lastChar = ' ';
@@ -134,7 +141,7 @@ char ***getSuperList(int (**fd)[2], int *length)
 				perror("realloc failed");
 				exit(1);
 			}
-			*fd = realloc(*fd, maxLen * sizeof(int[2]));
+			*fd = realloc(*fd, maxLen * sizeof(int[3]));
 			if (*fd == NULL) {
 				perror("realloc failed");
 				exit(1);
@@ -143,6 +150,12 @@ char ***getSuperList(int (**fd)[2], int *length)
 		superList[i] = getList((*fd)[i], &lastChar);
 		if (superList[i] != NULL)
 			i++;
+		if (i != 0 && lastChar == '&') {
+			if ((*fd)[i - 1][2] == AMPERSAND)
+				(*fd)[i - 1][2] = 0;
+			else
+				(*fd)[i - 1][2] = AMPERSAND;
+		}
 	}
 	if (i > 0)
 		superList[i] = 0;
@@ -191,35 +204,31 @@ int sendCmd(char **command, int *fd, int closeNext)
 
 
 
-int superSendCmd(char ***command, int (*fd)[2], int length)
+int superSendCmd(char ***command, int (*fd)[3], int length)
 {
 	int superfd[2], pipefd[2], closeNext;
 
-	superfd[0] = fd[0][0];
 	pipefd[0] = fd[0][0];
 	closeNext = 0;
-	if (length != 1) {
-		pipe(pipefd);
-		closeNext = pipefd[0];
-		superfd[1] = pipefd[1];
-	}
 	for (int i = 0; i < length; i++) {
-		if (i > 0 && i < length - 1) {
-			superfd[0] = pipefd[0];
+		superfd[0] = pipefd[0];
+		if (fd[i][1] == PIPE_CODE && fd[i + 1][0] == 0) {
 			pipe(pipefd);
 			closeNext = pipefd[0];
 			superfd[1] = pipefd[1];
-		}
-		if (i == length - 1) {
-			superfd[0] = pipefd[0];
+		} else {
 			superfd[1] = fd[i][1];
 			closeNext = 0;
 		}
+		if (fd[i][0] != 0)
+			superfd[0] = fd[i][0];
 		sendCmd(command[i], superfd, closeNext);
 		if (superfd[0] != 0)
 			close(superfd[0]);
 		if (superfd[1] != 1)
 			close(superfd[1]);
+		if (!fd[i][2])
+			wait(NULL);
 	}
 	return 0;
 }
@@ -232,8 +241,8 @@ void INT_handler(int sig)
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
-		printf("pid %d ", getpid());
-		puts("SIGINT...");
+		//printf("pid %d ", getpid());
+		puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
 		sigwait(&sigset, &sig);
@@ -258,12 +267,13 @@ void install_handler(void)
 
 int main(void)
 {
-	int (*fd)[2], length = 0;
+	int (*fd)[3], length = 0;
 	char ***command;
 
 	install_handler();
 	while (1) {
 		fd = NULL;
+		printf("shell%d: ", getpid());
 		command = getSuperList(&fd, &length);
 		if (command == NULL)
 			continue;
@@ -272,7 +282,7 @@ int main(void)
 		superSendCmd(command, fd, length);
 		freeSuperList(command, fd);
 		while (1) {
-			if (wait(NULL) != -1)
+			if (wait(NULL) == -1)
 				break;
 		}
 	}
