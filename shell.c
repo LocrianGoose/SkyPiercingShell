@@ -240,6 +240,7 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 void INT_handler(int sig)
 {
 	sigset_t sigset;
+	const struct timespec timeout = {1, 1};
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
@@ -247,7 +248,7 @@ void INT_handler(int sig)
 		puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
-		sigwait(&sigset, &sig);
+		sigtimedwait(&sigset, NULL, &timeout);
 	} else {
 		printf("GAH! Signal %d!!!\n", sig);
 	}
