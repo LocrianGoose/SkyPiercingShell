@@ -9,8 +9,8 @@ Task:
 5. Pipelining for n elements [y]
 6. Background processes [n]
 7. cd [n]
-8. && [n]
-9. Ctrl+C [?] /* Race condition with shell executed from another shell */
+8. && [y]
+9. Ctrl+C [y]
 
 Bonuses:
 1. Pipelining | and && combination

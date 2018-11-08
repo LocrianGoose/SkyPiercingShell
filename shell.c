@@ -208,7 +208,7 @@ int sendCmd(char **command, int *fd, int closeNext)
 
 int superSendCmd(char ***command, int (*fd)[3], int length)
 {
-	int superfd[2], pipefd[2], closeNext, i;
+	int superfd[2], pipefd[2], closeNext, i, wstatus;
 
 	pipefd[0] = fd[0][0];
 	closeNext = 0;
@@ -225,8 +225,11 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 		if (fd[i][0] != 0)
 			superfd[0] = fd[i][0];
 		sendCmd(command[i], superfd, closeNext);
-		if (!fd[i][2])
-			wait(NULL);
+		if (!fd[i][2]) {
+			wait(&wstatus);
+			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus))
+				break;
+		}
 	}
 	while (1) {
 		if (fd[length - 1][2] || wait(NULL) == -1)
@@ -236,7 +239,7 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 }
 
 
-/* race condition with recurcive shells */
+/* needs testing */
 void INT_handler(int sig)
 {
 	sigset_t sigset;
