@@ -130,9 +130,9 @@ char **getList(int *fd, char *lastCh)
 			break;
 		}
 	}
-	if (i > 0)
+	if (i > 0) {
 		list[i] = 0;
-	else if (list != NULL) {
+	} else if (list != NULL) {
 		free(list);
 		list = NULL;
 	}
