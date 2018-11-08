@@ -17,3 +17,4 @@ Bonuses:
 2. I/O forwarding in pipeline
 3. No global variables
 4. Pipeline is concurrent
+5. Handling multiple '>', '<' (using only latest declared)
