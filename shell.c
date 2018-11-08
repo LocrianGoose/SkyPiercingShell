@@ -231,10 +231,6 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 				break;
 		}
 	}
-	while (1) {
-		if (fd[length - 1][2] || wait(NULL) == -1)
-			break;
-	}
 	return 0;
 }
 
