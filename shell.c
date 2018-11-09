@@ -41,7 +41,8 @@ void *superRealloc(void *ptr, int size)
 
 void superDup2(int oldfd, int newfd)
 {
-	dup2(oldfd, newfd);
+	if (dup2(oldfd, newfd) == -1)
+		perror("dup2 failed");
 	superClose(oldfd);
 }
 
@@ -63,21 +64,23 @@ char *getWord(char *lastCh)
 		word[i++] = buf;
 	}
 	*lastCh = buf;
-	if (i > 0)
+	if (i > 0) {
 		word[i] = 0;
+		puts(word);
+	}
 	return word;
 }
 
 void freeList(char **command)
 {
-	for (int i = 0; command[i] != 0; i++)
+	for (int i = 0; command[i] != NULL; i++)
 		free(command[i]);
 	free(command);
 }
 
 void freeSuperList(char ***command, int (*fd)[3])
 {
-	for (int i = 0; command[i] != 0; i++)
+	for (int i = 0; command[i] != NULL; i++)
 		freeList(command[i]);
 	free(command);
 	free(fd);
@@ -130,11 +133,11 @@ char **getList(int *fd, char *lastCh)
 			break;
 		}
 	}
-	if (i > 0) {
-		list[i] = 0;
-	} else if (list != NULL) {
+	if (i == 0) {
 		free(list);
 		list = NULL;
+	} else {
+		list[i] = NULL;
 	}
 	return list;
 }
@@ -166,11 +169,11 @@ char ***getSuperList(int (**fd)[3], int *length)
 				(*fd)[i - 1][2] = AMPERSAND;
 		}
 	}
-	if (i > 0)
-		superList[i] = 0;
-	else if (superList != 0) {
+	if (i == 0) {
 		free(superList);
 		superList = NULL;
+	} else {
+		superList[i] = NULL;
 	}
 	*length = i;
 	return superList;
@@ -209,7 +212,7 @@ pid_t sendCmd(char **command, int *fd, int closeNext)
 int superSendCmd(char ***command, int (*fd)[3], int length)
 {
 	int superfd[2], pipefd[2], closeNext, i, wstatus;
-        pid_t chldpid;
+	pid_t chldpid;
 
 	pipefd[0] = fd[0][0];
 	closeNext = 0;
