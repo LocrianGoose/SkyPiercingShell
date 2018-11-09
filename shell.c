@@ -182,7 +182,7 @@ char isExit(char *word)
 }
 
 
-int sendCmd(char **command, int *fd, int closeNext)
+pid_t sendCmd(char **command, int *fd, int closeNext)
 {
 	pid_t pid = fork();
 
@@ -209,6 +209,7 @@ int sendCmd(char **command, int *fd, int closeNext)
 int superSendCmd(char ***command, int (*fd)[3], int length)
 {
 	int superfd[2], pipefd[2], closeNext, i, wstatus;
+        pid_t chldpid;
 
 	pipefd[0] = fd[0][0];
 	closeNext = 0;
@@ -224,9 +225,9 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 		}
 		if (fd[i][0] != 0)
 			superfd[0] = fd[i][0];
-		sendCmd(command[i], superfd, closeNext);
+		chldpid = sendCmd(command[i], superfd, closeNext);
 		if (!fd[i][2]) {
-			wait(&wstatus);
+			waitpid(chldpid, &wstatus, 0);
 			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus))
 				break;
 		}
