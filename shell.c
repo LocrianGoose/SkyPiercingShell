@@ -41,8 +41,10 @@ void *superRealloc(void *ptr, int size)
 
 void superDup2(int oldfd, int newfd)
 {
-	if (dup2(oldfd, newfd) == -1)
+	if (dup2(oldfd, newfd) == -1) {
 		perror("dup2 failed");
+		exit(1);
+	}
 	superClose(oldfd);
 }
 
@@ -52,7 +54,6 @@ char *getWord(char *lastChar)
 	char *word = NULL;
 	char buf;
 	int i = 0;
-	*lastChar = 0;
 
 	while ((buf = getchar()) != ' ' && buf != '\n' &&
 				buf != '>' && buf != '<' &&
@@ -100,6 +101,10 @@ void handleLastChar(char *lastChar, int *fd, int i)
 		superClose(fd[1]);
 		fd[1] = open(fileName,
 			O_RDWR | O_CREAT | O_TRUNC, 0666);
+		if (fd[1] == -1) {
+			perror("open failed");
+			exit(1);
+		}
 		free(fileName);
 			break;
 	case '<':
@@ -112,6 +117,10 @@ void handleLastChar(char *lastChar, int *fd, int i)
 		} while (fileName == NULL);
 		superClose(fd[0]);
 		fd[0] = open(fileName, O_RDONLY);
+		if (fd[0] == -1) {
+			perror("open failed");
+			exit(1);
+		}
 		free(fileName);
 		break;
 	case '|':
@@ -231,7 +240,10 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 	for (i = 0; i < length; i++) {
 		superfd[0] = pipefd[0];
 		if (fd[i][1] == PIPE_CODE && fd[i + 1][0] == 0) {
-			pipe(pipefd);
+			if (pipe(pipefd)) {
+				perror("pipe failed");
+				exit(1);
+			}
 			closeNext = pipefd[0];
 			superfd[1] = pipefd[1];
 		} else {
