@@ -64,10 +64,8 @@ char *getWord(char *lastCh)
 		word[i++] = buf;
 	}
 	*lastCh = buf;
-	if (i > 0) {
+	if (i > 0)
 		word[i] = 0;
-		puts(word);
-	}
 	return word;
 }
 
