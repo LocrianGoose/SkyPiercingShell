@@ -46,13 +46,13 @@ void superDup2(int oldfd, int newfd)
 	superClose(oldfd);
 }
 
-char *getWord(char *lastCh)
+char *getWord(char *lastChar)
 {
 	int maxLen = 1;
 	char *word = NULL;
 	char buf;
 	int i = 0;
-	*lastCh = 0;
+	*lastChar = 0;
 
 	while ((buf = getchar()) != ' ' && buf != '\n' &&
 				buf != '>' && buf != '<' &&
@@ -63,7 +63,7 @@ char *getWord(char *lastCh)
 		}
 		word[i++] = buf;
 	}
-	*lastCh = buf;
+	*lastChar = buf;
 	if (i > 0)
 		word[i] = 0;
 	return word;
@@ -84,52 +84,66 @@ void freeSuperList(char ***command, int (*fd)[3])
 	free(fd);
 }
 
-char **getList(int *fd, char *lastCh)
+void handleLastChar(char *lastChar, int *fd, int i)
+{
+	char *fileName;
+
+	switch (*lastChar) {
+	case '>':
+		if (i == 0) {
+			puts("Syntax error");
+			exit(1);
+		}
+		do {
+			fileName = getWord(lastChar);
+		} while (fileName == NULL);
+		superClose(fd[1]);
+		fd[1] = open(fileName,
+			O_RDWR | O_CREAT | O_TRUNC, 0666);
+		free(fileName);
+			break;
+	case '<':
+		if (i == 0) {
+			puts("Syntax error");
+			exit(1);
+		}
+		do {
+			fileName = getWord(lastChar);
+		} while (fileName == NULL);
+		superClose(fd[0]);
+		fd[0] = open(fileName, O_RDONLY);
+		free(fileName);
+		break;
+	case '|':
+		if (i == 0) {
+			puts("Syntax error");
+			exit(1);
+		}
+		if (fd[1] == 1) {
+			fd[1] = PIPE_CODE;
+			fd[2] = PIPE_CODE;
+		}
+		break;
+	}
+}
+
+char **getList(int *fd, char *lastChar)
 {
 	int maxLen = 1, i = 0;
-	char *fileName;
 	char **list = NULL;
 
 	fd[0] = 0;
 	fd[1] = 1;
 	fd[2] = 0;
-	while (*lastCh != '\n' && *lastCh != '|' && *lastCh != '&') {
+	while (*lastChar != '\n' && *lastChar != '|' && *lastChar != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
 			list = superRealloc(list, maxLen * sizeof(char *));
 		}
-		list[i] = getWord(lastCh);
+		list[i] = getWord(lastChar);
 		if (list[i] != NULL)
 			i++;
-		switch (*lastCh) {
-		case '>':
-			do {
-				fileName = getWord(lastCh);
-			} while (fileName == NULL);
-			superClose(fd[1]);
-			fd[1] = open(fileName,
-				O_RDWR | O_CREAT | O_TRUNC, 0666);
-			free(fileName);
-			break;
-		case '<':
-			do {
-				fileName = getWord(lastCh);
-			} while (fileName == NULL);
-			superClose(fd[0]);
-			fd[0] = open(fileName, O_RDONLY);
-			free(fileName);
-			break;
-		case '|':
-			if (i == 0) {
-				puts("Syntax error");
-				exit(1);
-			}
-			if (fd[1] == 1) {
-				fd[1] = PIPE_CODE;
-				fd[2] = PIPE_CODE;
-			}
-			break;
-		}
+		handleLastChar(lastChar, fd, i);
 	}
 	if (i == 0) {
 		free(list);
