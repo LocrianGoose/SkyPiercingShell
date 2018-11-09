@@ -101,11 +101,11 @@ void handleLastChar(char *lastChar, int *fd, int i)
 		superClose(fd[1]);
 		fd[1] = open(fileName,
 			O_RDWR | O_CREAT | O_TRUNC, 0666);
+		free(fileName);
 		if (fd[1] == -1) {
 			perror("open failed");
 			exit(1);
 		}
-		free(fileName);
 			break;
 	case '<':
 		if (i == 0) {
@@ -117,11 +117,11 @@ void handleLastChar(char *lastChar, int *fd, int i)
 		} while (fileName == NULL);
 		superClose(fd[0]);
 		fd[0] = open(fileName, O_RDONLY);
+		free(fileName);
 		if (fd[0] == -1) {
 			perror("open failed");
 			exit(1);
 		}
-		free(fileName);
 		break;
 	case '|':
 		if (i == 0) {
@@ -205,23 +205,48 @@ char isExit(char *word)
 	return !strncmp(word, "exit", 5) || !strncmp(word, "quit", 5);
 }
 
+int customCommand(char **command)
+{
+	if (!strncmp(command[0], "cd", 3)) {
+		if (command[1] == NULL ||
+		(command[1][0] == '~' && strlen(command[1]) == 1)) {
+			if (chdir(getenv("HOME")) < 0) {
+				perror("chdir failed");
+				return -1;
+			}
+		} else if (chdir(command[1]) < 0) {
+			perror("chdir failed");
+			return -1;
+		}
+	} else {
+		return 0;
+	}
+	return 1;
+}
 
 pid_t sendCmd(char **command, int *fd, int closeNext)
 {
-	pid_t pid = fork();
+	pid_t pid = 1;
+	int custom = customCommand(command);
 
-	if (pid < 0) {
-		perror("fork failed");
-		exit(1);
-	} else if (pid == 0) {
-		superClose(closeNext);
-		superDup2(fd[0], 0);
-		superDup2(fd[1], 1);
-		if (execvp(command[0], command) < 0) {
-			perror("exec failed");
-			puts(command[0]);
+	if (!custom) {
+		pid = fork();
+
+		if (pid < 0) {
+			perror("fork failed");
 			exit(1);
+		} else if (pid == 0) {
+			superClose(closeNext);
+			superDup2(fd[0], 0);
+			superDup2(fd[1], 1);
+			if (execvp(command[0], command) < 0) {
+				perror("exec failed");
+				puts(command[0]);
+				exit(1);
+			}
 		}
+	} else if (custom < 1) {
+		pid = -1;
 	}
 	superClose(fd[1]);
 	superClose(fd[0]);
@@ -253,7 +278,9 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 		if (fd[i][0] != 0)
 			superfd[0] = fd[i][0];
 		chldpid = sendCmd(command[i], superfd, closeNext);
-		if (!fd[i][2]) {
+		if (chldpid < 0)
+			break;
+		if (!fd[i][2] && chldpid != 1) {
 			waitpid(chldpid, &wstatus, 0);
 			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus))
 				break;
@@ -262,6 +289,19 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 	return 0;
 }
 
+void printBar(void)
+{
+	char host[1024];
+
+	gethostname(host, 1023);
+	printf("%s@%s ", getenv("USER"), host);
+	if (!strcmp(getenv("USER"), "root"))
+		putchar('#');
+	else
+		putchar('$');
+	putchar(' ');
+
+}
 
 /* needs testing */
 void INT_handler(int sig)
@@ -295,6 +335,7 @@ void install_handler(void)
 	sigaction(SIGINT, &setup_action, NULL);
 }
 
+
 int main(void)
 {
 	int (*fd)[3], length = 0;
@@ -303,7 +344,7 @@ int main(void)
 	install_handler();
 	while (1) {
 		fd = NULL;
-		printf("shell%d: ", getpid());
+		printBar();
 		command = getSuperList(&fd, &length);
 		if (command == NULL)
 			continue;
