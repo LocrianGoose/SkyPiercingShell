@@ -27,7 +27,7 @@ typedef struct {
 
 int superClose(int fd)
 {
-	if (fd != 1 && fd != 0)
+	if (fd != 1 && fd != 0 && fd != -1 && fd != 2)
 		if (close(fd)) {
 			perror("close failed");
 			exit(1);
@@ -59,7 +59,7 @@ int superOpen(char *fileName, int flag)
 	}
 	if (fd == -1) {
 		perror("open failed");
-		return flag;
+		return -1;
 	}
 	return fd;
 }
@@ -121,12 +121,20 @@ int handleLastChar(char *lastChar, Command *command, int i)
 {
 	switch (*lastChar) {
 	case '<':
+		if (i == 0) {
+			puts("Syntax error");
+			return 1;
+		}
 		free(command->input);
 		do {
 			command->input = getWord(lastChar);
 		} while (command->input == NULL);
 		break;
 	case '>':
+		if (i == 0) {
+			puts("Syntax error");
+			return 1;
+		}
 		free(command->output);
 		do {
 			command->output = getWord(lastChar);
@@ -163,7 +171,10 @@ Command *getCommand(char *lastChar)
 		command->sentence[i] = getWord(lastChar);
 		if (command->sentence[i] != NULL)
 			i++;
-		handleLastChar(lastChar, command, i);
+		if (handleLastChar(lastChar, command, i)) {
+			freeCommand(command);
+			return (Command *) -1;
+		}
 	}
 	if (i == 0) {
 		freeCommand(command);
@@ -183,6 +194,7 @@ Command **getSuperCommand(int *length)
 	int maxLen = 1;
 	int i = 0;
 
+	*length = 0;
 	while (lastChar != '\n') {
 		lastChar = ' ';
 		if (i + 1 >= maxLen) {
@@ -191,7 +203,9 @@ Command **getSuperCommand(int *length)
 					maxLen * sizeof(Command *));
 		}
 		superCommand[i] = getCommand(&lastChar);
-		if (superCommand[i] != NULL)
+		if (superCommand[i] == (Command *) -1)
+			*length = -1;
+		else if (superCommand[i] != NULL)
 			i++;
 		if (i != 0 && lastChar == '&') {
 			if (superCommand[i - 1]->flag == AMPERSAND)
@@ -206,7 +220,8 @@ Command **getSuperCommand(int *length)
 	} else {
 		superCommand[i] = NULL;
 	}
-	*length = i;
+	if (*length != -1)
+		*length = i;
 	return superCommand;
 }
 
@@ -281,8 +296,8 @@ int sendSuperCommand(Command **superCommand, int length)
 	int superfd[2], pipefd[2], closeNext, i, wstatus;
 	pid_t chldpid;
 
-	pipefd[0] = superOpen(superCommand[0]->input, 0);
 	closeNext = 0;
+	pipefd[0] = 0;
 	for (i = 0; i < length; i++) {
 		superfd[0] = pipefd[0];
 		if (superCommand[i]->flag == PIPE_CODE &&
@@ -300,6 +315,12 @@ int sendSuperCommand(Command **superCommand, int length)
 		}
 		if (superCommand[i]->input != NULL)
 			superfd[0] = superOpen(superCommand[i]->input, 0);
+		if (superfd[0] == -1 || superfd[1] == -1) {
+			superClose(superfd[0]);
+			superClose(superfd[1]);
+			superClose(closeNext);
+			break;
+		}
 		chldpid = sendCommand(superCommand[i]->sentence, superfd,
 				closeNext, superCommand[i]->flag);
 		if (chldpid < 0)
@@ -366,7 +387,7 @@ void install_handler(void)
 
 int main(void)
 {
-	int length = 0;
+	int length;
 	Command **superCommand;
 
 	install_handler();
@@ -377,7 +398,8 @@ int main(void)
 			continue;
 		if (isExit((superCommand[0]->sentence)[0]))
 			break;
-		sendSuperCommand(superCommand, length);
+		if (length > 0)
+			sendSuperCommand(superCommand, length);
 		freeSuperCommand(superCommand);
 	}
 	return 0;
