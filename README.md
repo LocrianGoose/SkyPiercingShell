@@ -7,10 +7,10 @@ Task:
 3. Input and output forwarding [y]
 4. Pipelining for 2 elements [y]
 5. Pipelining for n elements [y]
-6. Background processes [n]
-7. cd [n]
+6. Background processes [y]
+7. cd [y]
 8. && [y]
-9. Ctrl+C [y]
+9. Ctrl+C handling [y]
 
 Bonuses:
 1. Pipelining | and && combination
