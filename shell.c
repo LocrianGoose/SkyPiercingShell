@@ -207,15 +207,18 @@ char isExit(char *word)
 
 int customCommand(char **command)
 {
+	char *home;
+
 	if (!strncmp(command[0], "cd", 3)) {
 		if (command[1] == NULL ||
 		(command[1][0] == '~' && strlen(command[1]) == 1)) {
-			if (chdir(getenv("HOME")) < 0) {
-				perror("chdir failed");
+			home = getenv("HOME");
+			if (home == NULL || chdir(home) < 0) {
+				perror("cd failed");
 				return -1;
 			}
 		} else if (chdir(command[1]) < 0) {
-			perror("chdir failed");
+			perror("cd failed");
 			return -1;
 		}
 	} else {
@@ -292,10 +295,12 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 void printBar(void)
 {
 	char host[1024];
+	char *user = getenv("USER");
 
-	gethostname(host, 1023);
-	printf("%s@%s ", getenv("USER"), host);
-	if (!strcmp(getenv("USER"), "root"))
+	if (gethostname(host, 1023) < 0 || user == NULL)
+		return;
+	printf("%s@%s ", user, host);
+	if (!strcmp(user, "root"))
 		putchar('#');
 	else
 		putchar('$');
@@ -311,7 +316,7 @@ void INT_handler(int sig)
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
-		//printf("pid %d ", getpid());
+		//printf("pid %d pgid %d", getpid(), getpgid(0));
 		puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
