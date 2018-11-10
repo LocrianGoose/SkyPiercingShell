@@ -47,7 +47,7 @@ void *superRealloc(void *ptr, int size)
 
 int superOpen(char *fileName, int flag)
 {
-	int fd;
+	int fd = -1;
 
 	if (fileName == NULL) {
 		return flag;
