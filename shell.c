@@ -18,6 +18,12 @@
 #define PIPE_CODE -23
 #define AMPERSAND -42
 
+typedef struct {
+	char **sentence;
+	char *input;
+	char *output;
+	int flag;
+} Command;
 
 int superClose(int fd)
 {
@@ -37,6 +43,25 @@ void *superRealloc(void *ptr, int size)
 		exit(1);
 	}
 	return ptr;
+}
+
+int superOpen(char *fileName, int flag)
+{
+	int fd;
+
+	if (fileName == NULL) {
+		return flag;
+	} else if (flag == 0) {
+		fd = open(fileName, O_RDONLY);
+	} else if (flag == 1) {
+		fd = open(fileName,
+			O_RDWR | O_CREAT | O_TRUNC, 0666);
+	}
+	if (fd == -1) {
+		perror("open failed");
+		return flag;
+	}
+	return fd;
 }
 
 void superDup2(int oldfd, int newfd)
@@ -70,104 +95,90 @@ char *getWord(char *lastChar)
 	return word;
 }
 
-void freeList(char **command)
+void freeSentence(char **sentence)
 {
-	for (int i = 0; command[i] != NULL; i++)
-		free(command[i]);
+	for (int i = 0; sentence[i] != NULL; i++)
+		free(sentence[i]);
+	free(sentence);
+}
+
+void freeCommand(Command *command)
+{
+	freeSentence(command->sentence);
+	free(command->input);
+	free(command->output);
 	free(command);
 }
 
-void freeSuperList(char ***command, int (*fd)[3])
+void freeSuperCommand(Command **superCommand)
 {
-	for (int i = 0; command[i] != NULL; i++)
-		freeList(command[i]);
-	free(command);
-	free(fd);
+	for (int i = 0; superCommand[i] != NULL; i++)
+		freeCommand(superCommand[i]);
+	free(superCommand);
 }
 
-void handleLastChar(char *lastChar, int *fd, int i)
+int handleLastChar(char *lastChar, Command *command, int i)
 {
-	char *fileName;
-
 	switch (*lastChar) {
-	case '>':
-		if (i == 0) {
-			puts("Syntax error");
-			exit(1);
-		}
-		do {
-			fileName = getWord(lastChar);
-		} while (fileName == NULL);
-		superClose(fd[1]);
-		fd[1] = open(fileName,
-			O_RDWR | O_CREAT | O_TRUNC, 0666);
-		free(fileName);
-		if (fd[1] == -1) {
-			perror("open failed");
-			exit(1);
-		}
-			break;
 	case '<':
-		if (i == 0) {
-			puts("Syntax error");
-			exit(1);
-		}
+		free(command->input);
 		do {
-			fileName = getWord(lastChar);
-		} while (fileName == NULL);
-		superClose(fd[0]);
-		fd[0] = open(fileName, O_RDONLY);
-		free(fileName);
-		if (fd[0] == -1) {
-			perror("open failed");
-			exit(1);
-		}
+			command->input = getWord(lastChar);
+		} while (command->input == NULL);
+		break;
+	case '>':
+		free(command->output);
+		do {
+			command->output = getWord(lastChar);
+		} while (command->output == NULL);
 		break;
 	case '|':
 		if (i == 0) {
 			puts("Syntax error");
-			exit(1);
+			return 1;
 		}
-		if (fd[1] == 1) {
-			fd[1] = PIPE_CODE;
-			fd[2] = PIPE_CODE;
-		}
+		if (command->output == NULL)
+			command->flag = PIPE_CODE;
 		break;
 	}
+	return 0;
 }
 
-char **getList(int *fd, char *lastChar)
+Command *getCommand(char *lastChar)
 {
 	int maxLen = 1, i = 0;
-	char **list = NULL;
+	Command *command = malloc(sizeof(Command));
 
-	fd[0] = 0;
-	fd[1] = 1;
-	fd[2] = 0;
+	command->sentence = NULL;
+	command->input = NULL;
+	command->output = NULL;
+	command->flag = 0;
+
 	while (*lastChar != '\n' && *lastChar != '|' && *lastChar != '&') {
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
-			list = superRealloc(list, maxLen * sizeof(char *));
+			command->sentence = superRealloc(command->sentence,
+					maxLen * sizeof(char *));
 		}
-		list[i] = getWord(lastChar);
-		if (list[i] != NULL)
+		command->sentence[i] = getWord(lastChar);
+		if (command->sentence[i] != NULL)
 			i++;
-		handleLastChar(lastChar, fd, i);
+		handleLastChar(lastChar, command, i);
 	}
 	if (i == 0) {
-		free(list);
-		list = NULL;
+		freeCommand(command);
+		command = NULL;
 	} else {
-		list[i] = NULL;
+		command->sentence[i] = NULL;
 	}
-	return list;
+	return command;
 }
 
 
 
-char ***getSuperList(int (**fd)[3], int *length)
+Command **getSuperCommand(int *length)
 {
-	char ***superList = NULL;
+	Command **superCommand = NULL;
 	char lastChar = ' ';
 	int maxLen = 1;
 	int i = 0;
@@ -176,28 +187,27 @@ char ***getSuperList(int (**fd)[3], int *length)
 		lastChar = ' ';
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
-			superList = superRealloc(superList,
-					maxLen * sizeof(char **));
-			*fd = superRealloc(*fd, maxLen * sizeof(int[3]));
+			superCommand = superRealloc(superCommand,
+					maxLen * sizeof(Command *));
 		}
-		superList[i] = getList((*fd)[i], &lastChar);
-		if (superList[i] != NULL)
+		superCommand[i] = getCommand(&lastChar);
+		if (superCommand[i] != NULL)
 			i++;
 		if (i != 0 && lastChar == '&') {
-			if ((*fd)[i - 1][2] == AMPERSAND)
-				(*fd)[i - 1][2] = 0;
+			if (superCommand[i - 1]->flag == AMPERSAND)
+				superCommand[i - 1]->flag = 0;
 			else
-				(*fd)[i - 1][2] = AMPERSAND;
+				superCommand[i - 1]->flag = AMPERSAND;
 		}
 	}
 	if (i == 0) {
-		free(superList);
-		superList = NULL;
+		freeSuperCommand(superCommand);
+		superCommand = NULL;
 	} else {
-		superList[i] = NULL;
+		superCommand[i] = NULL;
 	}
 	*length = i;
-	return superList;
+	return superCommand;
 }
 
 char isExit(char *word)
@@ -227,7 +237,7 @@ int customCommand(char **command)
 	return 1;
 }
 
-pid_t sendCmd(char **command, int *fd, int closeNext, int flag)
+pid_t sendCommand(char **command, int *fd, int closeNext, int flag)
 {
 	pid_t pid = 1;
 	int custom = customCommand(command);
@@ -266,16 +276,17 @@ pid_t sendCmd(char **command, int *fd, int closeNext, int flag)
 
 
 
-int superSendCmd(char ***command, int (*fd)[3], int length)
+int sendSuperCommand(Command **superCommand, int length)
 {
 	int superfd[2], pipefd[2], closeNext, i, wstatus;
 	pid_t chldpid;
 
-	pipefd[0] = fd[0][0];
+	pipefd[0] = superOpen(superCommand[0]->input, 0);
 	closeNext = 0;
 	for (i = 0; i < length; i++) {
 		superfd[0] = pipefd[0];
-		if (fd[i][1] == PIPE_CODE && fd[i + 1][0] == 0) {
+		if (superCommand[i]->flag == PIPE_CODE &&
+				superCommand[i + 1]->input == NULL) {
 			if (pipe(pipefd)) {
 				perror("pipe failed");
 				exit(1);
@@ -283,15 +294,17 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 			closeNext = pipefd[0];
 			superfd[1] = pipefd[1];
 		} else {
-			superfd[1] = fd[i][1];
+			superfd[1] = superOpen(superCommand[i]->output, 1);
+			pipefd[0] = 0;
 			closeNext = 0;
 		}
-		if (fd[i][0] != 0)
-			superfd[0] = fd[i][0];
-		chldpid = sendCmd(command[i], superfd, closeNext, fd[i][2]);
+		if (superCommand[i]->input != NULL)
+			superfd[0] = superOpen(superCommand[i]->input, 0);
+		chldpid = sendCommand(superCommand[i]->sentence, superfd,
+				closeNext, superCommand[i]->flag);
 		if (chldpid < 0)
 			break;
-		if (!fd[i][2] && chldpid != 1) {
+		if (!superCommand[i]->flag && chldpid != 1) {
 			waitpid(chldpid, &wstatus, 0);
 			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus))
 				break;
@@ -305,8 +318,10 @@ void printBar(void)
 	char host[1024];
 	char *user = getenv("USER");
 
-	if (gethostname(host, 1023) < 0 || user == NULL)
+	if (gethostname(host, 1023) < 0 || user == NULL) {
+		printf("anon> ");
 		return;
+	}
 	printf("%s@%s ", user, host);
 	if (!strcmp(user, "root"))
 		putchar('#');
@@ -351,20 +366,19 @@ void install_handler(void)
 
 int main(void)
 {
-	int (*fd)[3], length = 0;
-	char ***command;
+	int length = 0;
+	Command **superCommand;
 
 	install_handler();
 	while (1) {
-		fd = NULL;
 		printBar();
-		command = getSuperList(&fd, &length);
-		if (command == NULL)
+		superCommand = getSuperCommand(&length);
+		if (superCommand == NULL)
 			continue;
-		if (isExit(command[0][0]))
+		if (isExit((superCommand[0]->sentence)[0]))
 			break;
-		superSendCmd(command, fd, length);
-		freeSuperList(command, fd);
+		sendSuperCommand(superCommand, length);
+		freeSuperCommand(superCommand);
 	}
 	return 0;
 }
