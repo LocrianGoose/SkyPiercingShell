@@ -227,7 +227,7 @@ int customCommand(char **command)
 	return 1;
 }
 
-pid_t sendCmd(char **command, int *fd, int closeNext)
+pid_t sendCmd(char **command, int *fd, int closeNext, int flag)
 {
 	pid_t pid = 1;
 	int custom = customCommand(command);
@@ -247,6 +247,14 @@ pid_t sendCmd(char **command, int *fd, int closeNext)
 				puts(command[0]);
 				exit(1);
 			}
+		}
+		if (flag == AMPERSAND) {
+			if (setpgid(pid, pid) < 0) {
+				perror("setpgid failed");
+				exit(1);
+			}
+			printf("%s with pid %d is working in a background\n",
+					command[0], pid);
 		}
 	} else if (custom < 1) {
 		pid = -1;
@@ -280,7 +288,7 @@ int superSendCmd(char ***command, int (*fd)[3], int length)
 		}
 		if (fd[i][0] != 0)
 			superfd[0] = fd[i][0];
-		chldpid = sendCmd(command[i], superfd, closeNext);
+		chldpid = sendCmd(command[i], superfd, closeNext, fd[i][2]);
 		if (chldpid < 0)
 			break;
 		if (!fd[i][2] && chldpid != 1) {
