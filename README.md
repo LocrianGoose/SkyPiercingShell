@@ -18,3 +18,6 @@ Bonuses:
 3. No global variables
 4. Pipeline is concurrent
 5. Handling multiple '>', '<' (using only latest declared)
+6. Handling '>', '<', "&&", '|' at the end of a line
+7. Handling text in ""
+8. Handling '\'

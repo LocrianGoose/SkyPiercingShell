@@ -77,17 +77,31 @@ char *getWord(char *lastChar)
 {
 	int maxLen = 1;
 	char *word = NULL;
-	char buf;
+	char buf, bufold = 0, bufoldold = 0;
 	int i = 0;
 
-	while ((buf = getchar()) != ' ' && buf != '\n' &&
+	while (((buf = getchar()) != ' ' && buf != '\n' &&
 				buf != '>' && buf != '<' &&
-				buf != '|' && buf != '&') {
+				buf != '|' && buf != '&')
+				|| bufold == '\\' || bufold == '\"') {
 		if (i + 1 >= maxLen) {
 			maxLen <<= 1;
 			word = superRealloc(word, maxLen * sizeof(char));
 		}
-		word[i++] = buf;
+		if ((buf == '\"' && !bufold) ||
+				(buf == '\\' && bufold != '\\')) {
+			bufoldold = bufold;
+			bufold = buf;
+		} else {
+			if (bufold == '\"' && buf == '\"') {
+				bufold = 0;
+				bufoldold = 0;
+				continue;
+			} else if (bufold == '\\') {
+				bufold = bufoldold;
+			}
+			word[i++] = buf;
+		}
 	}
 	*lastChar = buf;
 	if (i > 0)
@@ -121,22 +135,18 @@ int handleLastChar(char *lastChar, Command *command, int i)
 {
 	switch (*lastChar) {
 	case '<':
-		if (i == 0) {
-			puts("Syntax error");
-			return 1;
-		}
 		free(command->input);
 		do {
+			if (*lastChar == '\n')
+				printf("> ");
 			command->input = getWord(lastChar);
 		} while (command->input == NULL);
 		break;
 	case '>':
-		if (i == 0) {
-			puts("Syntax error");
-			return 1;
-		}
 		free(command->output);
 		do {
+			if (*lastChar == '\n')
+				printf("> ");
 			command->output = getWord(lastChar);
 		} while (command->output == NULL);
 		break;
@@ -191,11 +201,12 @@ Command **getSuperCommand(int *length)
 {
 	Command **superCommand = NULL;
 	char lastChar = ' ';
-	int maxLen = 1;
-	int i = 0;
+	int maxLen = 1, i = 0, specialCase = 0;
 
 	*length = 0;
-	while (lastChar != '\n') {
+	while (lastChar != '\n' || specialCase) {
+		if (lastChar == '\n')
+			printf("> ");
 		lastChar = ' ';
 		if (i + 1 >= maxLen) {
 			maxLen = maxLen << 1;
@@ -203,23 +214,25 @@ Command **getSuperCommand(int *length)
 					maxLen * sizeof(Command *));
 		}
 		superCommand[i] = getCommand(&lastChar);
-		if (superCommand[i] == (Command *) -1)
+		if (superCommand[i] == (Command *) -1) {
 			*length = -1;
-		else if (superCommand[i] != NULL)
+		} else if (superCommand[i] != NULL) {
 			i++;
-		if (i != 0 && lastChar == '&') {
-			if (superCommand[i - 1]->flag == AMPERSAND)
-				superCommand[i - 1]->flag = 0;
-			else
-				superCommand[i - 1]->flag = AMPERSAND;
+			specialCase = 0;
 		}
+		if (i != 0 && lastChar == '&') {
+			if (superCommand[i - 1]->flag == AMPERSAND) {
+				superCommand[i - 1]->flag = 0;
+				specialCase = 1;
+			} else {
+				superCommand[i - 1]->flag = AMPERSAND;
+			}
+		}
+		if (lastChar == '|')
+			specialCase = 1;
 	}
-	if (i == 0) {
-		freeSuperCommand(superCommand);
-		superCommand = NULL;
-	} else {
+	if (i > 0)
 		superCommand[i] = NULL;
-	}
 	if (*length != -1)
 		*length = i;
 	return superCommand;
@@ -246,6 +259,8 @@ int customCommand(char **command)
 			perror("cd failed");
 			return -1;
 		}
+	} else if (isExit(command[0])) {
+		exit(0);
 	} else {
 		return 0;
 	}
@@ -269,7 +284,6 @@ pid_t sendCommand(char **command, int *fd, int closeNext, int flag)
 			superDup2(fd[1], 1);
 			if (execvp(command[0], command) < 0) {
 				perror("exec failed");
-				puts(command[0]);
 				exit(1);
 			}
 		}
@@ -352,7 +366,6 @@ void printBar(void)
 
 }
 
-/* needs testing */
 void INT_handler(int sig)
 {
 	sigset_t sigset;
@@ -360,7 +373,6 @@ void INT_handler(int sig)
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
-		//printf("pid %d pgid %d", getpid(), getpgid(0));
 		puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
@@ -394,10 +406,6 @@ int main(void)
 	while (1) {
 		printBar();
 		superCommand = getSuperCommand(&length);
-		if (superCommand == NULL)
-			continue;
-		if (isExit((superCommand[0]->sentence)[0]))
-			break;
 		if (length > 0)
 			sendSuperCommand(superCommand, length);
 		freeSuperCommand(superCommand);
