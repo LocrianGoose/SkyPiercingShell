@@ -21,3 +21,4 @@ Bonuses:
 6. Handling '>', '<', "&&", '|' at the end of a line
 7. Handling text in ""
 8. Handling \
+9. Username@host
