@@ -417,7 +417,7 @@ int main(void)
 		if (length > 0)
 			sendSuperCommand(superCommand, length);
 		freeSuperCommand(superCommand);
-		while (wait(NULL) != -1)
+		while (waitpid(-1, NULL, WNOHANG) > 0)
 			;
 	}
 	return 0;
