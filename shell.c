@@ -298,7 +298,8 @@ pid_t sendCommand(char **command, int *fd, int closeNext, int flag)
 		if (flag == AMPERSAND) {
 			if (setpgid(pid, pid) < 0) {
 				perror("setpgid failed");
-				exit(1);
+				kill(pid, SIGTERM);
+				return -1;
 			}
 			printf("%s with pid %d is working in a background\n",
 					command[0], pid);
