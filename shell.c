@@ -356,13 +356,14 @@ int sendSuperCommand(Command **superCommand, int length)
 	return 0;
 }
 
-char *printBar(void)
+void printBar(void)
 {
 	char host[128];
 	char *user = getenv("USER");
 
 	if (gethostname(host, 127) < 0 || user == NULL) {
-		return "anon> ";
+		printf("anon> ");
+		return;
 	}
 	printf("%s@%s ", user, host);
 	if (!strcmp(user, "root"))
@@ -370,7 +371,6 @@ char *printBar(void)
 	else
 		putchar('$');
 	putchar(' ');
-	return NULL;
 }
 
 void INT_handler(int sig)
@@ -411,7 +411,7 @@ int main(void)
 
 	install_handler();
 	while (1) {
-		//printBar();
+		printBar();
 		superCommand = getSuperCommand(&length);
 		if (length > 0)
 			sendSuperCommand(superCommand, length);
