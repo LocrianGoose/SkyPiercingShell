@@ -84,10 +84,12 @@ char *getWord(char *lastChar)
 				buf != '>' && buf != '<' &&
 				buf != '|' && buf != '&')
 				|| bufold == '\\' || bufold == '\"') {
-		if (i + 1 >= maxLen) {
+		if (i + 2 >= maxLen) {
 			maxLen <<= 1;
 			word = superRealloc(word, maxLen * sizeof(char));
 		}
+		if (buf == '\n')
+			printf("> ");
 		if ((buf == '\"' && !bufold) ||
 				(buf == '\\' && bufold != '\\')) {
 			bufoldold = bufold;
@@ -97,10 +99,16 @@ char *getWord(char *lastChar)
 				bufold = 0;
 				bufoldold = 0;
 				continue;
-			} else if (bufold == '\\') {
+			} else if (bufold == '\\' && buf == '\"') {
 				bufold = bufoldold;
+				word[i++] = '\"';
+			} else if (bufoldold == '\"' && bufold == '\\') {
+				word[i++] = '\\';
+				word[i++] = buf;
+				bufold = '\"';
+			} else {
+				word[i++] = buf;
 			}
-			word[i++] = buf;
 		}
 	}
 	*lastChar = buf;
@@ -348,14 +356,13 @@ int sendSuperCommand(Command **superCommand, int length)
 	return 0;
 }
 
-void printBar(void)
+char *printBar(void)
 {
-	char host[1024];
+	char host[128];
 	char *user = getenv("USER");
 
-	if (gethostname(host, 1023) < 0 || user == NULL) {
-		printf("anon> ");
-		return;
+	if (gethostname(host, 127) < 0 || user == NULL) {
+		return "anon> ";
 	}
 	printf("%s@%s ", user, host);
 	if (!strcmp(user, "root"))
@@ -363,7 +370,7 @@ void printBar(void)
 	else
 		putchar('$');
 	putchar(' ');
-
+	return NULL;
 }
 
 void INT_handler(int sig)
@@ -404,11 +411,13 @@ int main(void)
 
 	install_handler();
 	while (1) {
-		printBar();
+		//printBar();
 		superCommand = getSuperCommand(&length);
 		if (length > 0)
 			sendSuperCommand(superCommand, length);
 		freeSuperCommand(superCommand);
+		while (wait(NULL) != -1)
+			;
 	}
 	return 0;
 }
