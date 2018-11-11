@@ -326,6 +326,7 @@ int sendSuperCommand(Command **superCommand, int length)
 				superCommand[i + 1]->input == NULL) {
 			if (pipe(pipefd)) {
 				perror("pipe failed");
+				superClose(superfd[0]);
 				break;
 			}
 			closeNext = pipefd[0];
