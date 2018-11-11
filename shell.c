@@ -30,7 +30,7 @@ int superClose(int fd)
 	if (fd != 1 && fd != 0 && fd != -1 && fd != 2)
 		if (close(fd)) {
 			perror("close failed");
-			exit(1);
+			return -1; //?
 		}
 	return 0;
 }
@@ -40,7 +40,7 @@ void *superRealloc(void *ptr, int size)
 	ptr = realloc(ptr, size);
 	if (ptr == NULL) {
 		perror("realloc failed");
-		exit(1);
+		exit(1); //?
 	}
 	return ptr;
 }
@@ -68,7 +68,7 @@ void superDup2(int oldfd, int newfd)
 {
 	if (dup2(oldfd, newfd) == -1) {
 		perror("dup2 failed");
-		exit(1);
+		exit(1); //?
 	}
 	superClose(oldfd);
 }
@@ -285,7 +285,7 @@ pid_t sendCommand(char **command, int *fd, int closeNext, int flag)
 
 		if (pid < 0) {
 			perror("fork failed");
-			exit(1);
+			pid = -1;
 		} else if (pid == 0) {
 			superClose(closeNext);
 			superDup2(fd[0], 0);
@@ -294,8 +294,7 @@ pid_t sendCommand(char **command, int *fd, int closeNext, int flag)
 				perror("exec failed");
 				exit(1);
 			}
-		}
-		if (flag == AMPERSAND) {
+		} else if (flag == AMPERSAND) {
 			if (setpgid(pid, pid) < 0) {
 				perror("setpgid failed");
 				kill(pid, SIGTERM);
@@ -327,7 +326,7 @@ int sendSuperCommand(Command **superCommand, int length)
 				superCommand[i + 1]->input == NULL) {
 			if (pipe(pipefd)) {
 				perror("pipe failed");
-				exit(1);
+				break;
 			}
 			closeNext = pipefd[0];
 			superfd[1] = pipefd[1];
