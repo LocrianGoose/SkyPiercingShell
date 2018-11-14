@@ -349,9 +349,14 @@ int sendSuperCommand(Command **superCommand, int length)
 		if (chldpid < 0)
 			break;
 		if (!superCommand[i]->flag && chldpid != 1) {
-			waitpid(chldpid, &wstatus, 0);
-			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus))
+			waitpid(chldpid, &wstatus, WUNTRACED);
+			if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus)) {
 				break;
+			} else if (WIFSTOPPED(wstatus)) {
+				printf("Process with pid %d stopped\n",
+						chldpid);
+				break;
+			}
 		}
 	}
 	return 0;
@@ -374,7 +379,7 @@ void printBar(void)
 	putchar(' ');
 }
 
-void INT_handler(int sig)
+void handler(int sig)
 {
 	sigset_t sigset;
 	const struct timespec timeout = {1, 1};
@@ -384,6 +389,11 @@ void INT_handler(int sig)
 		puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
+		sigtimedwait(&sigset, NULL, &timeout);
+	} else if (sig == SIGTSTP) {
+		puts(" SIGTSTP...");
+		sigaddset(&sigset, SIGTSTP);
+		kill(-getpid(), SIGTSTP);
 		sigtimedwait(&sigset, NULL, &timeout);
 	} else {
 		printf("GAH! Signal %d!!!\n", sig);
@@ -398,10 +408,13 @@ void install_handler(void)
 	sigemptyset(&block_mask);
 	sigaddset(&block_mask, SIGINT);
 	sigaddset(&block_mask, SIGQUIT);
-	setup_action.sa_handler = INT_handler;
+	sigaddset(&block_mask, SIGTSTP);
+	setup_action.sa_handler = handler;
 	setup_action.sa_mask = block_mask;
 	setup_action.sa_flags = SA_RESTART;
 	sigaction(SIGINT, &setup_action, NULL);
+	setup_action.sa_handler = handler;
+	sigaction(SIGTSTP, &setup_action, NULL);
 }
 
 
