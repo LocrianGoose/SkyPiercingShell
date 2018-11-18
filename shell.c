@@ -30,7 +30,7 @@ int superClose(int fd)
 	if (fd != 1 && fd != 0 && fd != -1 && fd != 2)
 		if (close(fd)) {
 			perror("close failed");
-			return -1; //?
+			exit(-1);
 		}
 	return 0;
 }
@@ -68,7 +68,7 @@ void superDup2(int oldfd, int newfd)
 {
 	if (dup2(oldfd, newfd) == -1) {
 		perror("dup2 failed");
-		exit(1); //?
+		exit(1);
 	}
 	superClose(oldfd);
 }
@@ -386,12 +386,12 @@ void handler(int sig)
 
 	sigemptyset(&sigset);
 	if (sig == SIGINT) {
-		puts(" SIGINT...");
+		//puts(" SIGINT...");
 		sigaddset(&sigset, SIGINT);
 		kill(-getpid(), SIGINT);
 		sigtimedwait(&sigset, NULL, &timeout);
 	} else if (sig == SIGTSTP) {
-		puts(" SIGTSTP...");
+		//puts(" SIGTSTP...");
 		sigaddset(&sigset, SIGTSTP);
 		kill(-getpid(), SIGTSTP);
 		sigtimedwait(&sigset, NULL, &timeout);
